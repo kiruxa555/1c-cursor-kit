@@ -1,0 +1,46 @@
+Third-Party Notices
+===================
+
+1c-cursor-kit aggregates and redistributes materials from public upstream
+repositories. Attribution and license notes:
+
+---------------------------------------------------------------------------
+Desko77/cursor-1c-skills
+https://github.com/Desko77/cursor-1c-skills
+
+Role: canonical source of platform/domain skills and most rules.
+
+License: MIT (stated in upstream README; related repository
+Desko77/claude-code-skills-1c is MIT, Copyright (c) 2026 Desko77).
+
+---------------------------------------------------------------------------
+fairballer-rgb/universal_1c_rules
+https://github.com/fairballer-rgb/universal_1c_rules
+
+Role: routing/core rules (agent_routing, bsp_libraries, platform-solutions).
+
+License: MIT
+Copyright (c) 2026 universal_1c_rules contributors
+
+---------------------------------------------------------------------------
+comol/ai_rules_1c
+https://github.com/comol/ai_rules_1c
+
+Role: workflow agents, commands, skills (caveman, handoff, metadata-manage).
+
+License: no SPDX file. Upstream README states (RU):
+«Никакой лицензии, берите и используйте как хотите»
+(author grants informal permission to take and use as desired).
+
+---------------------------------------------------------------------------
+Kit-owned additions (this repository)
+---------------------------------------------------------------------------
+- install.ps1, tools/*, manifest.yaml, templates/*
+- rules/bsl/1c-security-checklist.mdc (and related wiring)
+- skills/domain/1c-bsl-review (generic review skill)
+- selected workflow rules not present upstream
+
+Licensed under MIT; see LICENSE.
+
+Full MIT permission notice for Desko77 / fairballer materials is the same
+text as in LICENSE of this repository (copyright holders as above).

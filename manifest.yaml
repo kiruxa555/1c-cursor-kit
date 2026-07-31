@@ -1,0 +1,210 @@
+# 1c-cursor-kit — реестр rules и skills
+# Обновлять после Sync-Upstream.ps1
+
+version: "1.1.0"
+kitName: 1c-cursor-kit
+
+upstream:
+  desko77:
+    repo: https://github.com/Desko77/cursor-1c-skills
+    branch: master
+    role: canonical  # skills + базовые rules (MIT)
+  comol:
+    repo: https://github.com/comol/ai_rules_1c
+    branch: main
+    role: workflow  # agents, commands, caveman/handoff
+  fairballer:
+    repo: https://github.com/fairballer-rgb/universal_1c_rules
+    branch: master
+    role: routing   # agent_routing, bsp_libraries
+
+profiles:
+  Minimal:
+    description: "BSL-стандарты + маршрутизатор. Минимум контекста."
+    rules: [1c-coding-standards, anti_patterns, form_module_rules]
+    skills: [1c-config-router, 1c-bsl-review]
+  Standard:
+    description: "Полный platform/domain pack. Рекомендуется для УТ/CFE."
+    rules: all_except_optional
+    skills: [platform, domain]
+  Full:
+    description: "Standard + workflow (comol) + optional utilities."
+    rules: all
+    skills: [platform, domain, workflow, optional]
+
+# Категории rules (файлы в rules/<category>/)
+ruleCategories:
+  bsl:
+    - 1c-coding-standards
+    - anti_patterns
+    - form_module_rules
+    - query-optimization-tips
+    - async-methods-1c
+    - refactoring
+    - code-review-checklist
+    - 1c-security-checklist
+  forms-xml:
+    - edt-form-xml-requirements
+    - edt-zip-export-pitfalls
+    - forms_events
+    - forms_generation
+    - 1c-form-reserved-names
+  metadata:
+    - 1c-extension-patterns
+    - 1c-mdo-integrity
+    - external-data-source-mdo
+    - metadata-xml-workarounds
+    - v8unpack-source-structure
+    - 1c-role-rights
+    - 1c-report-direct-query
+    - bsp-profile-rights-api
+    - routine_assignment_ext_processor
+  workflow:
+    - sdd-workflow
+    - agent-verification-patterns
+    - knowledge-feedback-loop
+    - code-exploration-guide
+    - model-selection
+    - testing-patterns
+  core:
+    - agent_routing
+    - bsp_libraries
+    - platform-solutions
+
+# Источники rules вне Desko77 (merge при sync)
+ruleExtras:
+  agent_routing:
+    source: fairballer
+    path: .cursor/rules/agent_routing.mdc
+    category: core
+  bsp_libraries:
+    source: fairballer
+    path: .cursor/rules/bsp_libraries.mdc
+    category: core
+  platform-solutions:
+    source: fairballer
+    path: .cursor/rules/platform-solutions.mdc
+    category: core
+
+# Категории skills (папки в skills/<category>/)
+skillCategories:
+  platform:
+    - 1c-config-router
+    - 1c-cf-init
+    - 1c-cf-info
+    - 1c-cf-edit
+    - 1c-cf-add-object
+    - 1c-cf-new-project
+    - 1c-cf-validate
+    - 1c-cfe-init
+    - 1c-cfe-borrow
+    - 1c-cfe-patch-method
+    - 1c-cfe-diff
+    - 1c-cfe-full-cycle
+    - 1c-cfe-validate
+    - 1c-epf-scaffold
+    - 1c-epf-add-form
+    - 1c-epf-build
+    - 1c-epf-dump
+    - 1c-epf-full-cycle
+    - 1c-epf-validate
+    - 1c-erf-init
+    - 1c-erf-build
+    - 1c-erf-dump
+    - 1c-erf-validate
+    - 1c-db-create
+    - 1c-db-list
+    - 1c-db-run
+    - 1c-db-update
+    - 1c-db-dump-cf
+    - 1c-db-dump-xml
+    - 1c-db-load-cf
+    - 1c-db-load-xml
+    - 1c-db-load-git
+    - 1c-meta-compile
+    - 1c-meta-edit
+    - 1c-meta-info
+    - 1c-meta-remove
+    - 1c-meta-validate
+    - 1c-form-add
+    - 1c-form-compile
+    - 1c-form-edit
+    - 1c-form-info
+    - 1c-form-patterns
+    - 1c-form-remove
+    - 1c-form-validate
+    - 1c-subsystem-compile
+    - 1c-subsystem-edit
+    - 1c-subsystem-info
+    - 1c-subsystem-validate
+    - 1c-role-compile
+    - 1c-role-info
+    - 1c-role-validate
+    - 1c-template-add
+    - 1c-template-remove
+    - 1c-interface-edit
+    - 1c-interface-validate
+    - 1c-help-manage
+    - 1c-edt-tools
+    - v8unpack-cf
+  domain:
+    - composing-1c-queries
+    - 1c-query-optimization
+    - 1c-ssl-patterns
+    - 1c-skd-compile
+    - 1c-skd-edit
+    - 1c-skd-info
+    - 1c-skd-validate
+    - 1c-mxl-compile
+    - 1c-mxl-decompile
+    - 1c-mxl-info
+    - 1c-mxl-validate
+    - 1c-bsp-command
+    - 1c-bsp-registration
+    - 1c-naparnik
+    - 1c-platform-docs
+    - 1c-mcp-toolkit
+    - zup-hr-api-reference
+    - 1c-bsl-review
+  workflow:
+    - caveman
+    - handoff
+    - 1c-metadata-manage
+  optional:
+    - transcribe
+    - transcribe-audio-local
+    - mermaid-diagrams
+    - mermaid-render
+    - md-to-docx
+    - img-grid-analysis
+    - prompt-enhancer
+    - powershell-windows
+    - 1c-web-info
+    - 1c-web-publish
+    - 1c-web-stop
+    - 1c-web-test
+    - 1c-web-unpublish
+
+# Skills, которые живут в kit и не перезаписываются из upstream
+skillKitOwned:
+  - 1c-bsl-review
+
+skillExtras:
+  caveman:
+    source: comol
+    path: content/skills/caveman
+    category: workflow
+  handoff:
+    source: comol
+    path: content/skills/handoff
+    category: workflow
+  1c-metadata-manage:
+    source: comol
+    path: content/skills/1c-metadata-manage
+    category: workflow
+
+install:
+  globalRules: "%USERPROFILE%\\.cursor\\rules"
+  globalSkills: "%USERPROFILE%\\.cursor\\skills"
+  projectRules: ".cursor\\rules"
+  # Проектные rules (alwaysApply) НЕ копируются глобально — только шаблон
