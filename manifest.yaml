@@ -1,7 +1,7 @@
 # 1c-cursor-kit — реестр rules и skills
 # Обновлять после Sync-Upstream.ps1
 
-version: "1.2.0"
+version: "1.2.1"
 kitName: 1c-cursor-kit
 
 upstream:
@@ -148,6 +148,7 @@ skillCategories:
     - 1c-help-manage
     - 1c-edt-tools
     - v8unpack-cf
+    - 1c77-dev
   domain:
     - composing-1c-queries
     - 1c-query-optimization
@@ -167,6 +168,9 @@ skillCategories:
     - 1c-mcp-toolkit
     - zup-hr-api-reference
     - 1c-bsl-review
+    - kd2-rules
+    - kd31-rules
+    - cleverence-mslx
   workflow:
     - caveman
     - handoff
@@ -181,6 +185,7 @@ skillCategories:
     - img-grid-analysis
     - prompt-enhancer
     - powershell-windows
+    - dehumanize-ai-text
     - 1c-web-info
     - 1c-web-publish
     - 1c-web-stop
