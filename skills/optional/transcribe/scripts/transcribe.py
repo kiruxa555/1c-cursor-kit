@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -41,11 +42,34 @@ for _env_path in [
         break
 load_dotenv()  # cwd/.env как fallback
 
+import httpx
 from google import genai
+from google.genai import errors, types
 
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".avi", ".mov"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".m4a", ".flac", ".aac", ".wma"}
 ALL_EXTENSIONS = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
+
+# === Модели Gemini и авто-fallback при перегрузке ===
+
+# Стартовая модель по умолчанию: ПИН на конкретную версию gemini-2.5-flash (не плавающий алиас).
+# Плавающий gemini-flash-latest дрейфовал в gemini-3.5-flash (видео-вход 5x, выход 3.6x дороже) -
+# это дало 96% счета за Gemini в июне 2026. Явная версия не дрейфует.
+DEFAULT_MODEL = "gemini-2.5-flash"
+
+# Цепочка перебора при 503/429 - ТОЛЬКО дешевые модели 2.5. Сознательно НЕ уходим в дорогие
+# gemini-3.5-flash / *-pro / плавающие *-latest (в 4-5x дороже, именно на них утекал счет).
+# Если оба варианта перегружены - лучше отказ, чем молчаливая переплата в 5x. Обе видео-capable,
+# output 65536 / input 1M. Переопределяется через --model / --fallback-models / env.
+DEFAULT_FALLBACK_CHAIN = [
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+]
+
+# HTTP-коды, при которых переходим к следующей модели (SDK уже отретраил - модель устойчиво лежит).
+RETRYABLE_CODES = {408, 429, 500, 502, 503, 504}
+# Модель недоступна для ключа (напр. preview не у всех) - тоже к следующей, но без ожидания.
+MODEL_UNAVAILABLE_CODES = {404}
 
 # === Промпты: Generic ===
 
@@ -60,7 +84,36 @@ PROMPT_TRANSCRIBE = """Транскрибируй всю речь из этой 
 
 Отвечай на языке записи. Формат - Markdown с таймкодами."""
 
-PROMPT_SUMMARY_GENERIC = """Составь структурированный протокол встречи по этой записи.
+# Проход 1 саммари: экстрактор всех фактов из текста транскрипции (контроль полноты).
+PROMPT_TASKS_EXTRACT = """Перед тобой полная дословная транскрипция рабочей встречи. Извлеки из нее АБСОЛЮТНО ВСЕ конкретные пункты, ничего не обобщая и не пропуская.
+
+Пройди транскрипцию последовательно от начала до конца и выпиши:
+
+## Задачи и поручения
+Каждую задачу, поручение, договоренность что-то сделать - отдельным пунктом. Даже если упомянуто вскользь, одной фразой, между делом. Для каждой: что сделать, кто ответственный (если назван), срок (если назван), таймкод [MM:SS].
+
+## Решения
+Каждое принятое решение - отдельным пунктом, с таймкодом.
+
+## Открытые вопросы
+Каждый незакрытый вопрос, разногласие, "надо уточнить" - отдельным пунктом, с таймкодом.
+
+## Важные детали
+Прочие значимые факты: цифры, условия, названия систем и документов, сроки, которые прозвучали и могут понадобиться.
+
+Правила:
+- Полнота важнее краткости. Лучше включить лишнее, чем упустить.
+- НЕ объединяй несколько пунктов в один. Каждое поручение - отдельной строкой.
+- Сохраняй конкретику дословно: имена, цифры, названия, сроки.
+- Только то, что реально прозвучало в транскрипции. Ничего не выдумывай.
+
+Отвечай на языке транскрипции."""
+
+
+# Проход 2 саммари: протокол из текста транскрипции + извлеченных фактов (гарантия полноты).
+PROMPT_SUMMARY_FROM_TEXT = """Перед тобой полная транскрипция рабочей встречи и предварительно извлеченный из нее список фактов (задачи, решения, открытые вопросы, детали). Составь по ним структурированный протокол встречи.
+
+КЛЮЧЕВОЕ ТРЕБОВАНИЕ: протокол обязан включить ВСЕ пункты из списка фактов - ни одна задача, решение или открытый вопрос не должны потеряться. Список фактов - это контроль полноты; транскрипция - источник контекста, формулировок и связей.
 
 Формат протокола (строго соблюдай структуру и заголовки):
 
@@ -70,64 +123,32 @@ PROMPT_SUMMARY_GENERIC = """Составь структурированный п
 Один абзац - зачем собрались, что хотели обсудить/решить.
 
 ## Участники
-Список участников с именами и ролями (если определяются из записи).
-
-## Ключевые темы и фокус обсуждения
-Нумерованный список основных тем. Каждая тема - заголовок и 1-2 предложения пояснения что именно обсуждали.
-
-## Решения
-Нумерованный список конкретных решений, принятых на встрече. Каждое решение - отдельным пунктом, подробно.
-
-## Открытые вопросы
-Нумерованный список вопросов, которые остались нерешенными и требуют уточнения. Для каждого - пояснение почему отложено или что нужно для решения.
-
-## Задачи
-Группируй по ответственному. Для каждого человека - нумерованный список задач с описанием.
-Формат:
-### Имя (Роль)
-1. Описание задачи. Срок: дата или "не определен"
-2. ...
-
----
-
-Отвечай на языке записи. Формат - по делу, без воды, но с достаточной детализацией чтобы человек не присутствовавший на встрече понял контекст."""
-
-# === Промпты: Analyze-UI (анализ интерфейсов) ===
-
-PROMPT_UI_SUMMARY = """Ты анализируешь видеозапись рабочей встречи, на которой демонстрируются бизнес-процессы
-и интерфейсы программ (1С и другие).
-
-Составь структурированный протокол встречи. Формат (строго соблюдай структуру и заголовки):
-
----
-
-## Цель встречи
-Один абзац - зачем собрались, что хотели обсудить/решить.
-
-## Участники
-Список участников с именами и ролями (если определяются из записи).
+Список участников с именами и ролями (если определяются).
 
 ## Ключевые темы и фокус обсуждения
 Нумерованный список основных тем. Каждая тема - заголовок и 1-2 предложения пояснения.
-Отдельно отметь какие системы и интерфейсы демонстрировались.
 
 ## Решения
-Нумерованный список конкретных решений, принятых на встрече. Каждое решение - отдельным пунктом, подробно.
+Нумерованный список всех принятых решений. Каждое - отдельным пунктом, подробно, с таймкодом.
 
 ## Открытые вопросы
-Нумерованный список нерешенных вопросов. Для каждого - пояснение почему отложено или что нужно для решения.
+Нумерованный список всех нерешенных вопросов. Для каждого - почему отложено или что нужно для решения, с таймкодом.
 
 ## Задачи
 Группируй по ответственному. Для каждого человека - нумерованный список задач.
 Формат:
 ### Имя (Роль)
-1. Описание задачи. Срок: дата или "не определен"
+1. Описание задачи. Срок: дата или "не определен". Таймкод [MM:SS]
 2. ...
+Задачи без явного ответственного - в группу "### Без ответственного".
 
 ---
 
-Отвечай на русском языке. Формат - по делу, без воды, но с достаточной детализацией.
-Таймкоды в формате MM:SS."""
+Отвечай на языке транскрипции. По делу, но с достаточной детализацией, чтобы человек не присутствовавший на встрече понял контекст. Перепроверь себя: каждый факт из списка должен найти место в протоколе."""
+
+# === Промпты: Analyze-UI (анализ интерфейсов) ===
+# Саммари в analyze-ui строится из текста транскрипции через build_summary
+# (полнее по задачам/решениям, чем разбор видео), отдельного UI-промпта саммари нет.
 
 PROMPT_UI_DETAILED = """Ты анализируешь видеозапись рабочей встречи, на которой демонстрируются бизнес-процессы
 и интерфейсы программ (1С и другие).
@@ -179,6 +200,22 @@ PROMPT_SCREENSHOTS = """Проанализируй видео и определ�
 
 Выбери 5-15 ключевых моментов, равномерно распределенных по видео."""
 
+PROMPT_UI_ALLINONE = """Перед тобой ФРАГМЕНТ (несколько минут) видеозаписи рабочей встречи, где демонстрируются 1С и другие интерфейсы. Разбери ВЕСЬ фрагмент за один проход и верни РОВНО три раздела. Каждый раздел начинается с точной строки-разделителя на ОТДЕЛЬНОЙ строке - пиши разделители буквально, как указано.
+
+Таймкоды - ОТ НАЧАЛА этого фрагмента (фрагмент начинается с 00:00). Покрой ВСЮ длительность: таймкоды примерно каждые 15-30 секунд от 00:00 и до самого конца фрагмента, НЕ останавливайся раньше. ВСЁ строго на русском языке, включая описания скриншотов.
+
+=====ТРАНСКРИПЦИЯ=====
+Полная дословная транскрипция речи, ничего не пропуская. Каждая реплика отдельной строкой строго в формате: [MM:SS] Имя: текст. Имена бери из обращений и представлений участников; если имя определить нельзя - пиши "Участник 1", "Участник 2" и т.д. стабильно за одним и тем же голосом.
+
+=====ДЕТАЛЬНЫЙ=====
+Пошаговый хронологический лог. КАЖДАЯ запись ОБЯЗАТЕЛЬНО начинается с таймкода [MM:SS]. Для каждого момента: какое окно/форма открыты (полное название из заголовка); какие поля и значения видны - читай ВЕСЬ текст с экрана ДОСЛОВНО (названия справочников, документов, регистров, отчётов, числа, даты, названия колонок и значения ячеек); какие действия выполняются; что при этом обсуждают участники (близко к тексту). Пиши связным текстом-нарративом. Цифры и названия - строго дословно.
+
+=====СКРИНШОТЫ=====
+ТОЛЬКО JSON-массив 2-4 ключевых моментов этого фрагмента (новая форма/интерфейс, важный результат-таблица, ключевое действие), без markdown и без тройных кавычек:
+[{"time": "MM:SS", "description": "что на скриншоте, по-русски"}]
+
+Все таймкоды строго в формате MM:SS от начала фрагмента."""
+
 
 # === Утилиты ===
 
@@ -215,6 +252,12 @@ def get_media_duration(path):
     except Exception as e:
         print(f"  Предупреждение: не удалось определить длительность ({e}). Разбивка длинных файлов отключена.")
         return 0
+
+
+UI_CHUNK_SEC = int(os.environ.get("UI_CHUNK_SEC", "300"))  # analyze-ui: длина видео-чанка (сек). Короткий
+#   чанк = один мультимодальный проход держит таймлайн; на полном видео один проход коллапсирует таймкоды.
+UI_MAX_PARALLEL = int(os.environ.get("UI_MAX_PARALLEL", "6"))  # analyze-ui: сколько чанков обрабатывать
+#   одновременно (загрузка+генерация). Gemini держит конкурентность; при 429/503 - перебор моделей invoker.
 
 
 def split_media(path, max_duration=3600):
@@ -342,76 +385,197 @@ def is_audio(path):
     return path.suffix.lower() in AUDIO_EXTENSIONS
 
 
-# === Генерация через Gemini ===
+# === Генерация через Gemini с авто-fallback по моделям ===
 
-def generate(client, media_file, prompt):
-    """Вызов Gemini с медиафайлом и промптом."""
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[media_file, prompt],
-    )
-    if not response.text:
-        raise RuntimeError(
-            f"Gemini вернул пустой ответ (возможно, сработал фильтр безопасности). "
-            f"finish_reason: {getattr(response.candidates[0], 'finish_reason', 'unknown') if response.candidates else 'no candidates'}"
+class GeminiClient:
+    """Обертка над genai.Client с авто-перебором моделей при перегрузке (503/429).
+
+    Ретрай одной модели делает SDK (http_options.retry_options). Этот класс при устойчивом
+    отказе модели переключается на следующую из цепочки и запоминает рабочую для следующих вызовов.
+    """
+
+    def __init__(self, api_key, models):
+        # SDK сам ретраит каждую модель (по умолчанию retry_options=None - ретраев нет).
+        # attempts=2 на КАЖДУЮ модель; коды ретрая - дефолтные SDK (408/429/500/502/503/504).
+        retry = types.HttpRetryOptions(attempts=2)
+        self.client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(retry_options=retry),
         )
-    return response.text
+        self.models = models
+        self._idx = 0  # индекс текущей рабочей модели
+
+    def generate(self, media_file, prompt):
+        """Генерация по медиафайлу (видео/аудио) с перебором моделей. Возвращает текст."""
+        return self._generate([media_file, prompt])
+
+    def generate_text(self, text, prompt):
+        """Генерация по текстовому контенту (напр. саммари из транскрипции). Возвращает текст."""
+        # Порядок как в generate: данные, затем инструкция.
+        return self._generate([text, prompt])
+
+    def _generate(self, contents):
+        """Перебор моделей при перегрузке (503/429) для произвольного contents. Возвращает текст."""
+        n = len(self.models)
+        tried = []
+        last_err = None
+        for offset in range(n):
+            i = (self._idx + offset) % n
+            model = self.models[i]
+            tried.append(model)
+            next_model = self.models[(self._idx + offset + 1) % n] if offset < n - 1 else None
+            tail = f"пробую {next_model}" if next_model else "модели исчерпаны"
+            try:
+                response = self.client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                )
+                if not response.text:
+                    # Пустой ответ - фильтр безопасности/контент, а не нагрузка.
+                    # Модели не перебираем: пробрасываем наружу.
+                    finish = (
+                        getattr(response.candidates[0], "finish_reason", "unknown")
+                        if response.candidates else "no candidates"
+                    )
+                    raise RuntimeError(
+                        f"Gemini ({model}) вернул пустой ответ (возможно, сработал фильтр "
+                        f"безопасности). finish_reason: {finish}"
+                    )
+                self._idx = i  # запомнить рабочую модель для следующих вызовов
+                if offset > 0:
+                    print(f"  [OK] Сгенерировано моделью {model}")
+                return response.text
+            except errors.APIError as e:
+                if e.code in RETRYABLE_CODES or e.code in MODEL_UNAVAILABLE_CODES:
+                    last_err = e
+                    print(f"  [!] Модель {model} недоступна (код {e.code}), {tail}")
+                    continue
+                raise  # fatal (400/401/403/...) - смена модели не поможет
+            except (httpx.TimeoutException, httpx.TransportError) as e:
+                last_err = e
+                print(f"  [!] Сетевая ошибка на {model} ({type(e).__name__}), {tail}")
+                continue
+        raise RuntimeError(
+            f"Все модели Gemini недоступны (перегрузка/недоступность). "
+            f"Испробованы: {', '.join(tried)}. Последняя ошибка: {last_err}"
+        )
 
 
-def transcribe_generic(client, media_file, time_offset=0):
+def transcribe_generic(invoker, media_file, time_offset=0):
     """Generic-транскрипция: verbatim речь с таймкодами."""
-    text = generate(client, media_file, PROMPT_TRANSCRIBE)
+    text = invoker.generate(media_file, PROMPT_TRANSCRIBE)
     return offset_timestamps_in_text(text, time_offset)
 
 
-def generate_summary_generic(client, media_file):
-    """Generic-саммари."""
-    return generate(client, media_file, PROMPT_SUMMARY_GENERIC)
+def build_summary(invoker, transcript_text):
+    """Саммари из текста транскрипции в два прохода: экстрактор фактов -> протокол.
+
+    Источник - текст транскрипции, а не видео: полнее по речи (все задачи/решения,
+    в т.ч. сказанные вскользь) и один проход на всю встречу убирает фрагментацию по
+    частям. Проход 1 извлекает все факты, проход 2 оформляет протокол, гарантированно
+    включив их. Прежнее саммари из видео в один проход теряло часть задач.
+    """
+    print("    [саммари 1/2] Извлечение всех задач/решений из транскрипции...")
+    facts = _safe_call(
+        "извлечение фактов",
+        lambda: invoker.generate_text(transcript_text, PROMPT_TASKS_EXTRACT),
+    )
+    print("    [саммари 2/2] Сборка протокола с контролем полноты...")
+    combined = (
+        f"ТРАНСКРИПЦИЯ:\n\n{transcript_text}\n\n"
+        f"---\n\nПРЕДВАРИТЕЛЬНО ИЗВЛЕЧЕННЫЕ ФАКТЫ:\n\n{facts}"
+    )
+    return _safe_call(
+        "протокол",
+        lambda: invoker.generate_text(combined, PROMPT_SUMMARY_FROM_TEXT),
+    )
 
 
-def analyze_ui_single(client, media_file, video_path, output_dir, part_label="", time_offset=0):
-    """Analyze-UI: саммари + детальный + скриншоты для одного видео."""
-    suffix = f" (часть {part_label})" if part_label else ""
+def _safe_call(label, fn):
+    """Выполнить вызов Gemini, не роняя весь прогон. При ожидаемом отказе вернуть маркер.
 
-    # 1. Саммари
-    print(f"\n  [UI 1/4] Генерация саммари{suffix}...")
-    summary_text = generate(client, media_file, PROMPT_UI_SUMMARY)
-
-    # 2. Детальный анализ
-    print(f"  [UI 2/4] Генерация детального анализа{suffix}...")
-    detailed_text = generate(client, media_file, PROMPT_UI_DETAILED)
-    detailed_text = offset_timestamps_in_text(detailed_text, time_offset)
-
-    # 3. Скриншоты
-    print(f"  [UI 3/4] Определение скриншотов{suffix}...")
-    screenshots_response = generate(client, media_file, PROMPT_SCREENSHOTS)
-
-    timestamps = []
+    Ловим только ожидаемые отказы Gemini: fatal API-код, исчерпанный пул моделей,
+    пустой ответ фильтра, сеть. Программные ошибки (AttributeError/TypeError) НЕ
+    маскируем - пусть падают, иначе баг кода спрячется за маркером. Прежде один
+    упавший вызов из нескольких терял весь прогон analyze-ui.
+    """
     try:
-        text = screenshots_response.strip()
-        text = re.sub(r"^```json\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-        timestamps = json.loads(text)
-        timestamps = offset_screenshot_times(timestamps, time_offset)
-    except (json.JSONDecodeError, ValueError) as e:
-        print(f"    Не удалось распарсить таймкоды: {e}")
+        return fn()
+    except (errors.APIError, httpx.TimeoutException, httpx.TransportError, RuntimeError) as e:
+        print(f"    [!] {label}: шаг пропущен ({e})", file=sys.stderr)
+        return f"\n> **[!] {label}: шаг не выполнен.** Причина: {e}\n"
 
-    extracted = []
+
+def _safe_generate(invoker, media_file, prompt, label):
+    """invoker.generate (по видео/файлу), не роняющий прогон analyze-ui."""
+    return _safe_call(label, lambda: invoker.generate(media_file, prompt))
+
+
+def _append(file_path, text):
+    """Дописать текст в файл результата (инкрементальное сохранение по частям)."""
+    with open(file_path, "a", encoding="utf-8") as f:
+        f.write(text)
+
+
+def _split_allinone(resp):
+    """Разбить единый ответ Gemini на (транскрипт, детальный, screenshots_json).
+
+    Разделители =====ТРАНСКРИПЦИЯ/ДЕТАЛЬНЫЙ/СКРИНШОТЫ=====. Если разметка не сработала
+    (напр. маркер ошибки _safe_generate) - весь ответ уходит в детальный, остальное пусто.
+    """
+    parts = re.split(r"=====\s*(ТРАНСКРИПЦИЯ|ДЕТАЛЬНЫЙ|СКРИНШОТЫ)\s*=====", resp)
+    d = {}
+    for i in range(1, len(parts) - 1, 2):
+        d[parts[i]] = parts[i + 1].strip()
+    transcript = d.get("ТРАНСКРИПЦИЯ", "")
+    detailed = d.get("ДЕТАЛЬНЫЙ", "")
+    shots = d.get("СКРИНШОТЫ", "")
+    if not detailed and not transcript:
+        detailed = resp.strip()
+    return transcript, detailed, shots
+
+
+def _parse_shots(shots_json, time_offset):
+    """Разобрать JSON-массив скриншотов и сдвинуть их таймкоды на time_offset. [] при ошибке."""
+    if not shots_json:
+        return []
+    try:
+        text = re.sub(r"^```json\s*", "", shots_json.strip())
+        text = re.sub(r"\s*```$", "", text)
+        return offset_screenshot_times(json.loads(text), time_offset)
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        print(f"    Не удалось распарсить таймкоды скриншотов: {e}")
+        return []
+
+
+def analyze_ui_single(invoker, media_file, video_path, output_dir, part_label="", time_offset=0):
+    """Analyze-UI: ОДИН мультимодальный проход по чанку (транскрипт + детальный + скриншоты).
+
+    Вызывается по-чанково (~5 мин) из _process_analyze_ui. На КОРОТКОМ чанке один проход
+    держит таймлайн (проверено де-риском); на полном 25-мин видео один проход коллапсирует
+    таймкоды. time_offset сдвигает чанк-локальные таймкоды в глобальные. Саммари строится
+    глобально из полной транскрипции в _process_analyze_ui.
+    """
+    suffix = f" (фрагмент {part_label})" if part_label else ""
+    print(f"  [проход]{suffix} транскрипт + детальный + скриншоты...")
+    resp = _safe_generate(invoker, media_file, PROMPT_UI_ALLINONE, f"проход{suffix}")
+    transcript_text, detailed_text, shots_json = _split_allinone(resp)
+
+    detailed_text = offset_timestamps_in_text(detailed_text, time_offset)
+    transcript_text = offset_timestamps_in_text(transcript_text, time_offset)
+
+    timestamps = _parse_shots(shots_json, time_offset)
     if timestamps:
         print(f"    Извлекаю {len(timestamps)} скриншотов...")
         extracted = extract_screenshots(video_path, timestamps, output_dir)
         detailed_text = insert_screenshots_into_text(detailed_text, extracted)
 
-    # 4. Generic-транскрипция
-    print(f"  [UI 4/4] Генерация транскрипции{suffix}...")
-    transcript_text = transcribe_generic(client, media_file, time_offset)
-
-    return summary_text, detailed_text, transcript_text
+    return detailed_text, transcript_text
 
 
 # === Основная логика ===
 
-def process_file(path, output_dir, mode, with_summary, output_format):
+def process_file(path, output_dir, mode, with_summary, output_format, models):
     """Обработка одного файла."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -425,17 +589,25 @@ def process_file(path, output_dir, mode, with_summary, output_format):
     size_mb = path.stat().st_size / (1024 * 1024)
     media_type = "видео" if is_video(path) else "аудио"
     print(f"Файл: {path.name} ({size_mb:.1f} MB, {media_type})")
+    if len(models) > 1:
+        print(f"Модель: {models[0]} (fallback при перегрузке: {', '.join(models[1:])})")
+    else:
+        print(f"Модель: {models[0]} (без fallback)")
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    client = genai.Client(api_key=api_key)
+    invoker = GeminiClient(api_key, models)
 
-    # Разбивка длинных файлов
-    parts, offsets = split_media(path)
+    # Разбивка: analyze-ui режем на короткие чанки (один проход/чанк держит таймлайн),
+    # остальные режимы - только очень длинные файлы.
+    if mode == "analyze-ui" and is_video(path):
+        parts, offsets = split_media(path, max_duration=UI_CHUNK_SEC)
+    else:
+        parts, offsets = split_media(path)
 
     if mode == "analyze-ui":
-        _process_analyze_ui(client, path, parts, offsets, output_dir)
+        _process_analyze_ui(invoker, path, parts, offsets, output_dir)
     else:
-        _process_generic(client, path, parts, offsets, output_dir, with_summary, output_format)
+        _process_generic(invoker, path, parts, offsets, output_dir, with_summary, output_format)
 
     # Очистка временных файлов
     for part_path in parts:
@@ -451,47 +623,56 @@ def process_file(path, output_dir, mode, with_summary, output_format):
     print(f"{'=' * 60}")
 
 
-def _process_generic(client, path, parts, offsets, output_dir, with_summary, output_format):
-    """Generic-режим: транскрипция (+ опционально саммари)."""
+def _process_generic(invoker, path, parts, offsets, output_dir, with_summary, output_format):
+    """Generic-режим: транскрипция (+ опц. саммари из полной транскрипции).
+
+    Саммари (при --with-summary) строится из полного текста транскрипции через
+    build_summary - полнее по задачам/решениям, чем разбор видео в один проход.
+    """
+    transcript_chunks = []
     if len(parts) == 1:
-        print("Загрузка файла в Gemini...")
-        media_file = upload_file(client, path)
-        print(f"Загружено: {media_file.name}")
-        media_file = wait_for_processing(client, media_file)
+        media_file = None
+        try:
+            print("Загрузка файла в Gemini...")
+            media_file = upload_file(invoker.client, path)
+            print(f"Загружено: {media_file.name}")
+            media_file = wait_for_processing(invoker.client, media_file)
 
-        print("\n  Генерация транскрипции...")
-        transcript_text = transcribe_generic(client, media_file)
-
-        summary_text = None
-        if with_summary:
-            print("  Генерация саммари...")
-            summary_text = generate_summary_generic(client, media_file)
-
-        _cleanup_file(client, media_file)
+            print("\n  Генерация транскрипции...")
+            transcript_chunks.append(transcribe_generic(invoker, media_file))
+        finally:
+            if media_file is not None:
+                _cleanup_file(invoker.client, media_file)
     else:
-        all_transcripts = []
-        all_summaries = []
-
         for i, (part_path, offset) in enumerate(zip(parts, offsets), 1):
             print(f"\n{'='*40} Часть {i}/{len(parts)} {'='*40}")
-            print("Загрузка части в Gemini...")
-            media_file = upload_file(client, part_path)
-            print(f"Загружено: {media_file.name}")
-            media_file = wait_for_processing(client, media_file)
+            media_file = None
+            try:
+                print("Загрузка части в Gemini...")
+                media_file = upload_file(invoker.client, part_path)
+                print(f"Загружено: {media_file.name}")
+                media_file = wait_for_processing(invoker.client, media_file)
 
-            print("  Генерация транскрипции...")
-            t_text = transcribe_generic(client, media_file, offset)
-            all_transcripts.append(f"## Часть {i} (с {offset//60}:{offset%60:02d})\n\n{t_text}")
+                print("  Генерация транскрипции...")
+                t_text = transcribe_generic(invoker, media_file, offset)
+                transcript_chunks.append(f"## Часть {i} (с {offset//60}:{offset%60:02d})\n\n{t_text}")
+            except (Exception, SystemExit) as e:
+                # Сбой одной части не должен терять транскрипцию остальных (симметрично analyze-ui).
+                print(f"  [!] Часть {i} не обработана ({e}), перехожу к следующей", file=sys.stderr)
+                transcript_chunks.append(
+                    f"## Часть {i} (с {offset//60}:{offset%60:02d})\n\n"
+                    f"> **[!] Часть {i}: не обработана.** Причина: {e}\n"
+                )
+            finally:
+                if media_file is not None:
+                    _cleanup_file(invoker.client, media_file)
 
-            if with_summary:
-                print("  Генерация саммари...")
-                s_text = generate_summary_generic(client, media_file)
-                all_summaries.append(f"## Часть {i}\n\n{s_text}")
+    transcript_text = "\n\n---\n\n".join(transcript_chunks)
 
-            _cleanup_file(client, media_file)
-
-        transcript_text = "\n\n---\n\n".join(all_transcripts)
-        summary_text = "\n\n---\n\n".join(all_summaries) if with_summary else None
+    summary_text = None
+    if with_summary:
+        print("\n  Генерация саммари из полной транскрипции...")
+        summary_text = build_summary(invoker, transcript_text)
 
     # Сохранение
     ext = ".txt" if output_format == "txt" else ".md"
@@ -505,56 +686,85 @@ def _process_generic(client, path, parts, offsets, output_dir, with_summary, out
         print(f"Сохранено: {summary_path.name}")
 
 
-def _process_analyze_ui(client, path, parts, offsets, output_dir):
-    """Analyze-UI режим: саммари + детальный + скриншоты + транскрипция."""
-    if len(parts) == 1:
-        print("Загрузка видео в Gemini...")
-        media_file = upload_file(client, path)
-        print(f"Загружено: {media_file.name}")
-        media_file = wait_for_processing(client, media_file)
+def _process_analyze_ui(invoker, path, parts, offsets, output_dir):
+    """Analyze-UI: видео нарезано на чанки (~UI_CHUNK_SEC сек), каждый чанк - ОДИН
+    мультимодальный проход (транскрипт+детальный+скриншоты), чанки идут ПАРАЛЛЕЛЬНО.
 
-        summary_text, detailed_text, transcript_text = analyze_ui_single(
-            client, media_file, path, output_dir
-        )
-
-        _cleanup_file(client, media_file)
-    else:
-        all_summaries = []
-        all_detailed = []
-        all_transcripts = []
-
-        for i, (part_path, offset) in enumerate(zip(parts, offsets), 1):
-            print(f"\n{'='*40} Часть {i}/{len(parts)} {'='*40}")
-            print("Загрузка части в Gemini...")
-            media_file = upload_file(client, part_path)
-            print(f"Загружено: {media_file.name}")
-            media_file = wait_for_processing(client, media_file)
-
-            s_text, d_text, t_text = analyze_ui_single(
-                client, media_file, path, output_dir,
-                part_label=f"{i}/{len(parts)}", time_offset=offset
-            )
-            all_summaries.append(f"## Часть {i}\n\n{s_text}")
-            all_detailed.append(f"## Часть {i} (с {offset//60}:{offset%60:02d})\n\n{d_text}")
-            all_transcripts.append(f"## Часть {i} (с {offset//60}:{offset%60:02d})\n\n{t_text}")
-
-            _cleanup_file(client, media_file)
-
-        summary_text = "\n\n---\n\n".join(all_summaries)
-        detailed_text = "\n\n---\n\n".join(all_detailed)
-        transcript_text = "\n\n---\n\n".join(all_transcripts)
-
-    # Сохранение (всегда .md в analyze-ui)
+    Один проход по КОРОТКОМУ чанку держит таймлайн (на полном видео один проход
+    коллапсирует таймкоды); чанки независимы, поэтому параллель не влияет на содержание,
+    результаты сшиваются строго по порядку. Сбой одного чанка оставляет маркер, но не
+    теряет остальные. Саммари строится в конце из ПОЛНОЙ транскрипции через build_summary
+    (полнее по задачам/решениям и без фрагментации).
+    """
+    multipart = len(parts) > 1
     summary_path = output_dir / f"{path.stem} - саммари.md"
-    summary_path.write_text(summary_text, encoding="utf-8")
-    print(f"\nСохранено: {summary_path.name}")
-
     detailed_path = output_dir / f"{path.stem} - детальный.md"
-    detailed_path.write_text(detailed_text, encoding="utf-8")
-    print(f"Сохранено: {detailed_path.name}")
-
     transcript_path = output_dir / f"{path.stem} - транскрипция.md"
-    transcript_path.write_text(transcript_text, encoding="utf-8")
+
+    # Чистый старт: перезапуск перезаписывает результат прошлого прогона
+    for p in (summary_path, detailed_path, transcript_path):
+        p.write_text("", encoding="utf-8")
+
+    def _process_chunk(i, part_path, offset):
+        """Обработать один чанк: загрузка -> один проход -> (детальный, транскрипт). Вернуть (i, d, t, ok).
+
+        Полностью НЕЗАВИСИМ от других чанков - потому параллелится без влияния на содержание.
+        """
+        media_file = None
+        try:
+            media_file = upload_file(invoker.client, part_path)
+            media_file = wait_for_processing(invoker.client, media_file)
+            d_text, t_text = analyze_ui_single(
+                invoker, media_file, path, output_dir,
+                part_label=f"{i}/{len(parts)}" if multipart else "",
+                time_offset=offset,
+            )
+            print(f"  [готов] фрагмент {i}/{len(parts)}", flush=True)
+            return i, d_text, t_text, True
+        except (Exception, SystemExit) as e:
+            # Сбой одного фрагмента не роняет остальные. SystemExit ловим намеренно:
+            # wait_for_processing зовет sys.exit(1) при FAILED-обработке файла Gemini.
+            print(f"  [!] Фрагмент {i} не обработан ({e})", file=sys.stderr, flush=True)
+            marker = (f"\n> **[!] Фрагмент {i} (с {offset//60}:{offset%60:02d}): не обработан.** "
+                      f"Причина: {e}\n")
+            return i, marker, marker, False
+        finally:
+            if media_file is not None:
+                _cleanup_file(invoker.client, media_file)
+
+    # Параллельная обработка чанков (загрузка+генерация одновременно; Gemini держит
+    # конкурентность, 429/503 гасит перебор моделей invoker). Каждый чанк независим,
+    # поэтому параллель НЕ меняет содержание - результаты сшиваются строго по порядку.
+    workers = min(len(parts), UI_MAX_PARALLEL)
+    if multipart:
+        print(f"\nОбработка {len(parts)} фрагментов параллельно (до {workers} одновременно)...")
+    else:
+        print("Загрузка видео в Gemini...")
+    results = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [ex.submit(_process_chunk, i, pp, off)
+                for i, (pp, off) in enumerate(zip(parts, offsets), 1)]
+        for fut in as_completed(futs):
+            i, d_text, t_text, ok = fut.result()
+            results[i] = (d_text, t_text)
+
+    # Сшивка строго по порядку фрагментов (таймкоды уже глобальные -> лог сплошным потоком)
+    transcript_chunks = []
+    for i in range(1, len(parts) + 1):
+        d_text, t_text = results[i]
+        sep = "\n\n" if i > 1 else ""
+        _append(detailed_path, f"{sep}{d_text}")
+        _append(transcript_path, f"{sep}{t_text}")
+        transcript_chunks.append(t_text)
+
+    # Единое саммари из полной транскрипции (полнота задач + без фрагментации по частям)
+    print("\n  Генерация саммари из полной транскрипции...")
+    full_transcript = "\n\n".join(transcript_chunks)
+    summary_text = build_summary(invoker, full_transcript)
+    summary_path.write_text(summary_text, encoding="utf-8")
+
+    print(f"\nСохранено: {summary_path.name}")
+    print(f"Сохранено: {detailed_path.name}")
     print(f"Сохранено: {transcript_path.name}")
 
 
@@ -567,6 +777,28 @@ def _cleanup_file(client, media_file):
 
 
 # === CLI ===
+
+def build_model_chain(cli_model=None, cli_fallback=None, no_fallback=False):
+    """Сборка цепочки моделей. Приоритет: CLI > env > дефолт. Стартовая первой, дедупликация."""
+    start = cli_model or os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
+    if no_fallback:
+        return [start]
+
+    chain_src = cli_fallback or os.environ.get("GEMINI_FALLBACK_MODELS")
+    if chain_src:
+        models = [m.strip() for m in chain_src.split(",") if m.strip()]
+    else:
+        models = list(DEFAULT_FALLBACK_CHAIN)
+
+    # стартовая первой + остальные, дедупликация с сохранением порядка
+    seen = set()
+    result = []
+    for m in [start] + models:
+        if m and m not in seen:
+            seen.add(m)
+            result.append(m)
+    return result
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -592,6 +824,19 @@ def main():
         choices=["md", "txt"],
         default="md",
         help="Формат вывода (по умолчанию: md)",
+    )
+    parser.add_argument(
+        "--model",
+        help=f"Стартовая модель Gemini (по умолчанию: {DEFAULT_MODEL} или env GEMINI_MODEL)",
+    )
+    parser.add_argument(
+        "--fallback-models",
+        help="Цепочка fallback через запятую (переопределяет дефолтную; иначе env GEMINI_FALLBACK_MODELS)",
+    )
+    parser.add_argument(
+        "--no-fallback",
+        action="store_true",
+        help="Отключить перебор моделей: использовать только стартовую (контроль стоимости/отладка)",
     )
     args = parser.parse_args()
 
@@ -622,7 +867,8 @@ def main():
     else:
         output_dir = path.parent / "Транскрипция" / path.stem
 
-    process_file(path, output_dir, mode, args.with_summary, args.format)
+    models = build_model_chain(args.model, args.fallback_models, args.no_fallback)
+    process_file(path, output_dir, mode, args.with_summary, args.format, models)
 
 
 if __name__ == "__main__":

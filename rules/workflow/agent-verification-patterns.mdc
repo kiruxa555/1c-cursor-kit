@@ -65,6 +65,5 @@ alwaysApply: false
 ## Связанные правила
 
 - `sdd-workflow.md` - фаза 7 (ревью кода).
-- `knowledge-feedback-loop.mdc` - после устранения нетривиальной ошибки: предложить дополнения в kit (rules/skills), **только с одобрения пользователя**; reconciliation loop — про код, KFL — про знания.
 - `code-exploration-guide.md` - трассировка и анализ кода.
 - `general-rules.md` - честность: явно сообщать о найденных расхождениях, не скрывать непокрытые входы.

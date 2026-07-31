@@ -9,6 +9,9 @@ Thumbs.db
 # Локальная пользовательская документация (не публикуем)
 docs/
 
+# Локальный blocklist для publish-hygiene (см. templates/publish-blocklist.txt.example)
+publish-blocklist.txt
+
 # Локальные клоны / временные артефакты
 .tmp/
 .cache/

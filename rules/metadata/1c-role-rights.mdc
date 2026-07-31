@@ -39,24 +39,15 @@ alwaysApply: false
 
 ## Ограничения прав на объекты, добавляемые в той же транзакции (расширения)
 
-Для расширений — если добавляешь новый объект метаданных (Catalog, Document, InformationRegister) + роль с правами на него в одной выгрузке, порядок резолва прав иногда вызывает зависание `LoadConfigFromFiles` (**часто ~78% «Завершение загрузки»**).
+Для расширений — если добавляешь новый объект метаданных (Catalog, Document, InformationRegister) + роль с правами на него в одной выгрузке, порядок резолва прав иногда вызывает зависание `LoadConfigFromFiles`.
 
-**Workaround:**
-
-1. Двухпроходная загрузка — сначала расширение без прав на новые объекты, затем полная выгрузка с правами (лучше — права через конфигуратор после первой загрузки).
-2. Для новых РС — `УстановитьПривилегированныйРежим(Истина)` в менеджере, без записи в `Rights.xml`.
-3. После `meta-compile` — сверить `ConfigDumpInfo.xml` (`1c-meta-compile/reference/extension-cfe-checklist.md`) и `/cfe-validate` (проверка 14).
-
-**Не править `Rights.xml` вручную** на только что сгенерированные `InformationRegister.*` / `Enum.*`, пока объект не появился в `ConfigDumpInfo.xml` и расширение не загрузилось в базу хотя бы раз.
+**Workaround:** двухпроходная загрузка — сначала расширение без роли (или с минимальной ролью), затем полная выгрузка с правами.
 
 ---
 
 ## Pre-flight check перед загрузкой расширения
 
-Перед `1cv8.exe DESIGNER /LoadConfigFromFiles -Extension`:
-
-1. **`/cfe-validate`** на каталог расширения (проверка 14: `ConfigDumpInfo` + роли).
-2. Поиск Enum-прав в ролях:
+Перед `1cv8.exe DESIGNER /LoadConfigFromFiles -Extension` проверить `Roles/<RoleName>/Ext/Rights.xml`:
 
 ```powershell
 # Pre-flight: поиск проблемных Enum-прав в ролях
@@ -72,6 +63,5 @@ Get-ChildItem -Path "$ConfigDir\Roles" -Recurse -Filter "Rights.xml" | ForEach-O
 
 ## Связанные правила
 
-- `1c-extension-patterns.mdc` — общие паттерны расширений
-- `1c-meta-compile/reference/extension-cfe-checklist.md` — ConfigDumpInfo после meta-compile
+- `1c-extension-patterns.md` — общие паттерны расширений
 - `bsp-profile-rights-api.md` — API БСП по профилям прав

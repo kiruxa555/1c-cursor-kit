@@ -1,0 +1,8 @@
+# Локальный blocklist для публичных репозиториев (не коммитить сам файл).
+# Скопируйте:  copy templates\publish-blocklist.txt.example publish-blocklist.txt
+# Каждая непустая строка без # — подстрока Critical при попадании в staged/tree.
+#
+# Примеры:
+# APSuppliers
+# MyClientCorp
+# internal-hostname.local

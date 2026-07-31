@@ -1,0 +1,28 @@
+name: publish-hygiene
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan tree (Critical fail)
+        shell: pwsh
+        run: |
+          ./tools/Test-PublishHygiene.ps1 -Scope Tree
+
+      - name: License/NOTICE required for this kit
+        shell: pwsh
+        run: |
+          if (-not (Test-Path LICENSE)) { Write-Error "LICENSE missing"; exit 1 }
+          if (-not (Test-Path NOTICE))  { Write-Error "NOTICE missing"; exit 1 }
+          Write-Host "LICENSE + NOTICE present"

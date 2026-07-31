@@ -11,9 +11,8 @@ description: "Создать объект метаданных 1С. Исполь
 
 1. Составь JSON по синтаксису и примерам ниже → запиши во временный файл
 2. Запусти скрипт meta-compile
-3. **Если `OutputDir` — расширение (CFE):** см. `reference/extension-cfe-checklist.md` и обязательно `/cfe-validate`
-4. Если нужно изменить созданный объект — `/meta-edit`
-5. Если нужно проверить — `/meta-validate` (конфигурация) или `/cfe-validate` (расширение)
+3. Если нужно изменить созданный объект — `/meta-edit`
+4. Если нужно проверить — `/meta-validate`
 
 ## Команда
 
@@ -111,14 +110,4 @@ powershell.exe -NoProfile -File skills/1c-meta-compile/scripts/meta-compile.ps1 
  { "type": "Constant", "name": "ОсновнаяВалюта", "valueType": "CatalogRef.Валюты" }
 ]
 ```
-
-## Расширения (CFE)
-
-`meta-compile` регистрирует объект только в `Configuration.xml`. **`ConfigDumpInfo.xml` не обновляется** — частая причина зависания конфигуратора при загрузке (~78%).
-
-После batch-compile в расширении:
-
-1. Сверить `ChildObjects` ↔ `ConfigDumpInfo.xml` (чеклист: `reference/extension-cfe-checklist.md`).
-2. Запустить `/cfe-validate` — проверка 14 (дамп + роли).
-3. **Не добавлять** новые объекты в `Roles/.../Ext/Rights.xml` вручную до первой успешной загрузки; для РС — привилегированный режим в BSL. Enum в роли не включать (`1c-role-rights.mdc`).
 

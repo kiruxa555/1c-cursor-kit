@@ -54,6 +54,20 @@ cd <путь-к-клону>\1c-cursor-kit
 .\install.ps1 -Profile Standard
 ```
 
+## Гигиена публикации (git / GitHub)
+
+Перед commit/push — сканер секретов, личных путей, blocklist, LICENSE/NOTICE:
+
+```powershell
+.\tools\Test-PublishHygiene.ps1 -Scope Staged   # индекс (как pre-commit)
+.\tools\Test-PublishHygiene.ps1 -Scope Tree     # всё дерево
+.\tools\Install-GitHooks.ps1                    # core.hooksPath=.githooks
+```
+
+CI: `.github/workflows/publish-hygiene.yml`. Правило агента: `git-publish-hygiene`. Skill: `git-publish-review` (профиль Full).
+
+Опциональный локальный blocklist: `templates/publish-blocklist.txt.example` → `publish-blocklist.txt` (в `.gitignore`).
+
 ## Принципы дедупликации
 
 1. **Один canonical skill** на `name` из frontmatter

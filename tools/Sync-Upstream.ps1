@@ -132,8 +132,16 @@ if (-not $SkillsOnly) {
         core = Get-YamlListUnderKey $manifestText 'ruleCategories' 'core'
     }
 
+    # Не тянем из Desko77: fairballer core + kit-owned rules
+    $skipFromDesko = @(
+        'agent_routing', 'bsp_libraries', 'platform-solutions',
+        '1c-security-checklist', 'knowledge-feedback-loop', 'metadata-xml-workarounds',
+        'git-publish-hygiene'
+    )
+
     foreach ($cat in $categories.Keys) {
         foreach ($ruleId in $categories[$cat]) {
+            if ($skipFromDesko -contains $ruleId) { continue }
             $src = Join-Path $desko "rules\$ruleId.mdc"
             Copy-RuleFile -SourceFile $src -Category $cat -FileName "$ruleId.mdc"
         }

@@ -1,0 +1,56 @@
+---
+description: "Гигиена git/GitHub: не публиковать секреты, личные пути, клиентские имена; LICENSE/NOTICE; force-push только по явному запросу"
+alwaysApply: false
+---
+
+# Git Publish Hygiene
+
+Применяется: перед `git commit`, `git push`, PR, force-push, orphan/rewrite history, «залей на GitHub», публикацией публичного репо.
+
+Не путать с `1c-security-checklist.mdc` (безопасность BSL runtime). Здесь — **поверхность публикации** (что попадает в remote).
+
+## Critical — не коммитить / не пушить
+
+1. **Секреты**: пароли, токены, API-ключи, `Bearer …`, строки ИБ (`Srvr=…;Pwd=…`), содержимое `.dev.env`, `.env`, ключи `.pfx`/`.pem` с private key.
+2. **Личные пути**: `C:\Users\<Имя>\…`, `/Users/<Имя>/…`, `/home/<Имя>/…` (плейсхолдеры `<user>`, `%USERPROFILE%`, `$env:USERPROFILE` — ок).
+3. **Клиентские/проектные маркеры** из `publish-blocklist.txt` (если есть) или явные названия чужих продуктов/расширений заказчика в публичном репо.
+4. **Учётные данные 1С** в скриптах/доках: логин/пароль ИБ, строки кластера.
+
+## High / процесс
+
+- **Не коммитить** без явной просьбы пользователя.
+- **Force-push / orphan rewrite** — только по явному запросу; перед этим прогнать сканер по всему дереву.
+- Публичный репо: должны быть `LICENSE` и (при redistrib upstream) `NOTICE` с атрибуцией.
+- Не делать каноном upstream **без лицензии** (`license: null`); предпочитать MIT/Apache-2.0.
+
+## Перед commit / push (агент)
+
+1. Прочитать это правило.
+2. Запустить:
+
+```powershell
+.\tools\Test-PublishHygiene.ps1 -Scope Staged
+# перед push / rewrite:
+.\tools\Test-PublishHygiene.ps1 -Scope Tree
+```
+
+3. Critical → исправить, не пушить. Warning → сообщить пользователю; для публичного репо по LICENSE/NOTICE — закрыть до push.
+4. При сомнении — skill `git-publish-review`.
+
+## Локальный hook
+
+```powershell
+.\tools\Install-GitHooks.ps1
+```
+
+Ставит `core.hooksPath=.githooks` (pre-commit вызывает сканер по staged).
+
+## CI
+
+Workflow `.github/workflows/publish-hygiene.yml` гоняет `-Scope Tree` на push/PR.
+
+## Allowlist (не считать нарушением)
+
+- Плейсхолдеры: `<user>`, `<путь-к-клону>`, `{{PROJECT_NAME}}`, `%USERPROFILE%`
+- Упоминания upstream-репозиториев и их лицензий в README/NOTICE
+- Тестовые фиктивные значения вроде `password=***`, `CHANGE_ME`

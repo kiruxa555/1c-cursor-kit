@@ -37,7 +37,10 @@ Kit-owned additions (this repository)
 ---------------------------------------------------------------------------
 - install.ps1, tools/*, manifest.yaml, templates/*
 - rules/bsl/1c-security-checklist.mdc (and related wiring)
+- rules/workflow/git-publish-hygiene.mdc
 - skills/domain/1c-bsl-review (generic review skill)
+- skills/workflow/git-publish-review
+- tools/Test-PublishHygiene.ps1, tools/Install-GitHooks.ps1, .githooks/, .github/workflows/publish-hygiene.yml
 - selected workflow rules not present upstream
 
 Licensed under MIT; see LICENSE.
