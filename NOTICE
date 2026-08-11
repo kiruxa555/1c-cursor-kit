@@ -40,7 +40,10 @@ Kit-owned additions (this repository)
 - rules/workflow/git-publish-hygiene.mdc
 - skills/domain/1c-bsl-review (generic review skill)
 - skills/workflow/git-publish-review
+- rules/workflow/change-impact-analysis.mdc
+- skills/workflow/change-impact-review
 - tools/Test-PublishHygiene.ps1, tools/Install-GitHooks.ps1, .githooks/, .github/workflows/publish-hygiene.yml
+- linkage integrity block in rules/bsl/code-review-checklist.mdc
 - selected workflow rules not present upstream
 
 Licensed under MIT; see LICENSE.

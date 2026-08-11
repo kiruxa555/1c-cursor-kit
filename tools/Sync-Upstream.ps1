@@ -136,7 +136,8 @@ if (-not $SkillsOnly) {
     $skipFromDesko = @(
         'agent_routing', 'bsp_libraries', 'platform-solutions',
         '1c-security-checklist', 'knowledge-feedback-loop', 'metadata-xml-workarounds',
-        'git-publish-hygiene'
+        'git-publish-hygiene',
+        'change-impact-analysis'
     )
 
     foreach ($cat in $categories.Keys) {

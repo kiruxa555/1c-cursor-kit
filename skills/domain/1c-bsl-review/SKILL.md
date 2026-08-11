@@ -34,10 +34,11 @@ description: "Ревью и рефакторинг BSL: расширения CFE
    - 1c-coding-standards, form_module_rules, anti_patterns
    - 1c-security-checklist (injection, RLS, secrets, privileged mode)
    - CFE: 1c-extension-patterns
-   - code-review-checklist for severity
+   - code-review-checklist for severity + linkage integrity
+   - standard/full: change-impact-review (callers, contracts, regress scenarios)
 
 4. Respond
-   - Verdict → Context → Problems table → Solution → Code → Checklist
+   - Verdict → Context → Linkage integrity (table) → Problems table → Solution → Code → Checklist
    - Three variants ONLY if mode=full or user asked
 
 5. If files edited → read_lints on changed paths

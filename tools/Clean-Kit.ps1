@@ -31,7 +31,8 @@ $kitOwnedRules = @(
     '1c-security-checklist.mdc',
     'knowledge-feedback-loop.mdc',
     'metadata-xml-workarounds.mdc',
-    'git-publish-hygiene.mdc'
+    'git-publish-hygiene.mdc',
+    'change-impact-analysis.mdc'
 )
 
 # --- rules: очистить файлы внутри категорий, сохранить kit-owned ---
