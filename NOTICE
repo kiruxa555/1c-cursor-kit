@@ -38,6 +38,7 @@ Kit-owned additions (this repository)
 - install.ps1, tools/*, manifest.yaml, templates/*
 - rules/bsl/1c-security-checklist.mdc (and related wiring)
 - rules/workflow/git-publish-hygiene.mdc
+- rules/workflow/git-fix-last-commit.mdc
 - skills/domain/1c-bsl-review (generic review skill)
 - skills/workflow/git-publish-review
 - rules/workflow/change-impact-analysis.mdc

@@ -15,12 +15,13 @@ description: "Проверка перед commit/push/PR: секреты, лич
 
 ```
 1. Read rule git-publish-hygiene.mdc
-2. Run scanner:
+2. If fixing a broken HEAD commit — also git-fix-last-commit.mdc (amend vs new)
+3. Run scanner:
    - before commit:  .\tools\Test-PublishHygiene.ps1 -Scope Staged
    - before push/CI: .\tools\Test-PublishHygiene.ps1 -Scope Tree
-3. Classify findings (Critical / Warning)
-4. Fix Critical or ask user; for public repo close LICENSE/NOTICE warnings
-5. Only then propose git commands (still no commit/push without explicit ask)
+4. Classify findings (Critical / Warning)
+5. Fix Critical or ask user; for public repo close LICENSE/NOTICE warnings
+6. Only then propose git commands (still no commit/push without explicit ask)
 ```
 
 ## Do NOT

@@ -22,6 +22,7 @@ alwaysApply: false
 - **Force-push / orphan rewrite** — только по явному запросу; перед этим прогнать сканер по всему дереву.
 - Публичный репо: должны быть `LICENSE` и (при redistrib upstream) `NOTICE` с атрибуцией.
 - Не делать каноном upstream **без лицензии** (`license: null`); предпочитать MIT/Apache-2.0.
+- Битый последний коммит (опечатка / забытый файл / сломанный билд того же намерения) — чинить через amend по `git-fix-last-commit.mdc`, не плодить `fix previous`.
 
 ## Перед commit / push (агент)
 

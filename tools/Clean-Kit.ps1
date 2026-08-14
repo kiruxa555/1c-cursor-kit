@@ -32,6 +32,7 @@ $kitOwnedRules = @(
     'knowledge-feedback-loop.mdc',
     'metadata-xml-workarounds.mdc',
     'git-publish-hygiene.mdc',
+    'git-fix-last-commit.mdc',
     'change-impact-analysis.mdc'
 )
 

@@ -1,7 +1,7 @@
 # 1c-cursor-kit — реестр rules и skills
 # Обновлять после Sync-Upstream.ps1
 
-version: "1.3.0"
+version: "1.3.1"
 kitName: 1c-cursor-kit
 
 upstream:
@@ -67,6 +67,7 @@ ruleCategories:
     - model-selection
     - testing-patterns
     - git-publish-hygiene
+    - git-fix-last-commit
     - change-impact-analysis
   core:
     - agent_routing
@@ -206,6 +207,7 @@ ruleKitOwned:
   - knowledge-feedback-loop
   - metadata-xml-workarounds
   - git-publish-hygiene
+  - git-fix-last-commit
   - change-impact-analysis
 
 skillExtras:

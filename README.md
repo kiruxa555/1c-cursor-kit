@@ -64,7 +64,7 @@ cd <путь-к-клону>\1c-cursor-kit
 .\tools\Install-GitHooks.ps1                    # core.hooksPath=.githooks
 ```
 
-CI: `.github/workflows/publish-hygiene.yml`. Правило агента: `git-publish-hygiene`. Skill: `git-publish-review` (профиль Full).
+CI: `.github/workflows/publish-hygiene.yml`. Правила агента: `git-publish-hygiene`, `git-fix-last-commit`. Skill: `git-publish-review` (профиль Full).
 
 Опциональный локальный blocklist: `templates/publish-blocklist.txt.example` → `publish-blocklist.txt` (в `.gitignore`).
 

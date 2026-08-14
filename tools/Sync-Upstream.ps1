@@ -137,6 +137,7 @@ if (-not $SkillsOnly) {
         'agent_routing', 'bsp_libraries', 'platform-solutions',
         '1c-security-checklist', 'knowledge-feedback-loop', 'metadata-xml-workarounds',
         'git-publish-hygiene',
+        'git-fix-last-commit',
         'change-impact-analysis'
     )
 
