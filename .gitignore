@@ -8,6 +8,8 @@ Thumbs.db
 
 # Локальная пользовательская документация (не публикуем)
 docs/
+!templates/docs/
+!templates/docs/**
 
 # Локальный blocklist для publish-hygiene (см. templates/publish-blocklist.txt.example)
 publish-blocklist.txt
