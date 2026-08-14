@@ -10,9 +10,10 @@ alwaysApply: true
 ## Перед любой задачей
 
 1. Прочитать `{{DOCS_ANCHOR}}` (главный якорь контекста для агента).
-2. При изменении поведения — сверить с changelog, architecture, coding-style в docs проекта.
-3. Для нетривиальных доработок — следовать `sdd-workflow.mdc` (фазы 0–2 минимум).
-4. Перед правкой логики — `change-impact-analysis.mdc`; при ревью — linkage integrity в `code-review-checklist.mdc`.
+2. Если есть `docs/incidents.md` — просмотреть записи по **области** задачи (frontend/bsl/…); при первом инциденте или отсутствии файла — создать из `1c-cursor-kit/templates/docs/incidents.md.template`.
+3. При изменении поведения — сверить с changelog, architecture, coding-style в docs проекта.
+4. Для нетривиальных доработок — следовать `sdd-workflow.mdc` (фазы 0–2 минимум).
+5. Перед правкой логики — `change-impact-analysis.mdc`; при ревью — linkage integrity в `code-review-checklist.mdc` и релевантные записи `docs/incidents.md`.
 
 ## Архитектурные границы
 
@@ -43,6 +44,6 @@ alwaysApply: true
 
 Если ошибка ушла после нескольких итераций и причина неочевидна — см. `knowledge-feedback-loop.mdc`:
 
-1. Записать симптом / причину / fix в `docs/changelog.md`.
+1. Записать симптом / root cause / fix в `docs/incidents.md` (предпочтительно) и кратко в `docs/changelog.md`.
 2. Проверить, нужно ли дополнить rules/skills в `1c-cursor-kit`.
 3. **Спросить пользователя** перед любой правкой kit. Без «да» — только предложение или `/kit-feedback`.

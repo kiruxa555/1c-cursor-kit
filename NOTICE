@@ -36,6 +36,7 @@ License: no SPDX file. Upstream README states (RU):
 Kit-owned additions (this repository)
 ---------------------------------------------------------------------------
 - install.ps1, tools/*, manifest.yaml, templates/*
+- templates/docs/incidents.md.template (project incident log)
 - rules/bsl/1c-security-checklist.mdc (and related wiring)
 - rules/workflow/git-publish-hygiene.mdc
 - rules/workflow/git-fix-last-commit.mdc

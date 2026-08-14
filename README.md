@@ -68,6 +68,8 @@ CI: `.github/workflows/publish-hygiene.yml`. Правила агента: `git-p
 
 Опциональный локальный blocklist: `templates/publish-blocklist.txt.example` → `publish-blocklist.txt` (в `.gitignore`).
 
+Шаблон журнала инцидентов проекта: `templates/docs/incidents.md.template` → `docs/incidents.md` в workspace (см. `project-rule.mdc.template`, `knowledge-feedback-loop.mdc`).
+
 ## Принципы дедупликации
 
 1. **Один canonical skill** на `name` из frontmatter

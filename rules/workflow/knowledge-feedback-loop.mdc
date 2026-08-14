@@ -49,7 +49,7 @@ alwaysApply: false
 
 ### 1. Capture — зафиксировать инцидент
 
-Четыре поля (кратко, в проектный `changelog` или `docs/kit-feedback-signals.md`):
+Четыре поля (кратко, в **`docs/incidents.md`** проекта; дублировать суть в `changelog` при релизе):
 
 | Поле | Содержание |
 |------|------------|
@@ -57,6 +57,8 @@ alwaysApply: false
 | Root cause | Почему сломалось |
 | Fix | Что изменили в коде/метаданных |
 | Повторимость | Будет ли в другом CFE/проекте? да/нет/возможно |
+
+Если `docs/incidents.md` нет — создать из `1c-cursor-kit/templates/docs/incidents.md.template`.
 
 ### 2. Route — маршрутизация по домену
 
@@ -101,6 +103,7 @@ alwaysApply: false
 | Слой | Куда писать | Нужно одобрение? |
 |------|-------------|------------------|
 | Проект (поведение агента) | `LLM-RULES.md` через `/evolve` | да (`/evolve`) |
+| Проект (инциденты, уроки) | `docs/incidents.md` | нет (в рамках задачи) |
 | Проект (факты доработки) | `docs/changelog.md` | нет (в рамках задачи) |
 | Kit (rules/skills) | `1c-cursor-kit` | **да, обязательно** |
 | Накопление сигналов | `docs/kit-feedback-signals.md` в проекте | нет |
